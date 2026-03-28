@@ -154,6 +154,8 @@ const MARKET_COMMISSION = 0.05;
 const MODULE_WEIGHT = 10;
 const CRAFT_MODULE_TIME = 5*60*1000;
 const CRAFT_UPGRADE_TIME = 60*1000;
+const MODULE_BREAK_CHANCE = 0.1;   // 10% при прочности <=20
+const MODULE_PRICE_LEVEL_MULTIPLIER = 0.2; // +20% за уровень
 
 const GOODS = [
     { id: "gold", name: "Золото", baseBuy:100, baseSell:100, spread:30, cargoSpace:1 },
@@ -416,36 +418,37 @@ function addArtifact(arr,id,usesLeft){ let existing=arr.find(a=>a.id===id && a.u
 function useArtifact(arr,id){ let idx=arr.findIndex(a=>a.id===id); if(idx===-1) return false; let art=arr[idx]; if(art.count>1) art.count--; else arr.splice(idx,1); return true; }
 function hasArtifact(arr,id){ return arr.some(a=>a.id===id); }
 
-// ---- Рынки (сокращённо, но полно) ----
+// ---- Рынки (с учётом уровня модулей и зарядов артефактов) ----
 function getAverageComponentPrice(compId){ let hist=componentPriceHistory[compId]; if(!hist||hist.count===0) return COMPONENTS.find(c=>c.id===compId).basePrice; return Math.floor(hist.totalSum/hist.count); }
 function updateComponentPriceHistory(compId,price){ if(!componentPriceHistory[compId]) componentPriceHistory[compId]={totalSum:0,count:0}; let hist=componentPriceHistory[compId]; hist.totalSum+=price; hist.count++; saveGame(); }
 function listComponentForSale(compId,price,sellerId,sellerIsPlayer){ componentMarket.push({componentId:compId,price,sellerId,sellerIsPlayer,timestamp:Date.now()}); addLogToGame(`${sellerIsPlayer?"Вы":"Бот"} выставил ${COMPONENTS.find(c=>c.id===compId).name} на продажу за ${price}💰.`,"success",sellerIsPlayer); saveGame(); }
 function cancelComponentSale(index,isPlayerCancelling){ let offer=componentMarket[index]; if(!offer) return false; if(!isPlayerCancelling && offer.sellerIsPlayer) return false; if(isPlayerCancelling && !offer.sellerIsPlayer) return false; componentMarket.splice(index,1); addLogToGame(`${isPlayerCancelling?"Вы":"Бот"} снял компонент с продажи.`,"success",isPlayerCancelling); saveGame(); return true; }
 function buyComponent(index,buyer,isPlayer,buyerName){ let offer=componentMarket[index]; if(!offer) return false; let price=offer.price; let commission=Math.floor(price*MARKET_COMMISSION); let sellerGets=price-commission; if(buyer.credits<price) return false; buyer.credits-=price; buyer.components[offer.componentId]=(buyer.components[offer.componentId]||0)+1; updateComponentPriceHistory(offer.componentId,price); if(offer.sellerIsPlayer){ player.artifactSalesBalance+=sellerGets; addLogToGame(`${buyerName} купил ${COMPONENTS.find(c=>c.id===offer.componentId).name} у вас за ${price}💰 (комиссия ${commission}💰).`,"success",true); } else { let sellerBot=bots.find(b=>b.id===offer.sellerId); if(sellerBot) sellerBot.artifactSalesBalance+=sellerGets; addLogToGame(`${buyerName} купил ${COMPONENTS.find(c=>c.id===offer.componentId).name} у ${sellerBot.name} за ${price}💰.`,"success",isPlayer); } componentMarket.splice(index,1); saveGame(); return true; }
 
-function getAverageArtifactPrice(artifactId){ let hist=artifactPriceHistory[artifactId]; if(!hist||hist.count===0) return ARTIFACTS[artifactId].basePrice; return Math.floor(hist.totalSum/hist.count); }
+function getAverageArtifactPrice(artifactId, usesLeft=null){
+    let hist=artifactPriceHistory[artifactId];
+    let baseAvg = (hist && hist.count>0) ? Math.floor(hist.totalSum/hist.count) : ARTIFACTS[artifactId].basePrice;
+    if(usesLeft===null) return baseAvg;
+    let totalUses = ARTIFACTS[artifactId].uses;
+    let factor = usesLeft / totalUses;
+    return Math.floor(baseAvg * factor);
+}
 function updateArtifactPriceHistory(artifactId,price){ if(!artifactPriceHistory[artifactId]) artifactPriceHistory[artifactId]={totalSum:0,count:0}; let hist=artifactPriceHistory[artifactId]; hist.totalSum+=price; hist.count++; saveGame(); }
 function listArtifactForSale(artifactId,usesLeft,price,sellerId,sellerIsPlayer){ artifactMarket.push({artifactId,usesLeft,price,sellerId,sellerIsPlayer,timestamp:Date.now()}); addLogToGame(`${sellerIsPlayer?"Вы":"Бот"} выставил ${ARTIFACTS[artifactId].name} на продажу за ${price}💰.`,"success",sellerIsPlayer); saveGame(); }
 function cancelArtifactSale(index,isPlayerCancelling){ let offer=artifactMarket[index]; if(!offer) return false; if(!isPlayerCancelling && offer.sellerIsPlayer) return false; if(isPlayerCancelling && !offer.sellerIsPlayer) return false; artifactMarket.splice(index,1); addLogToGame(`${isPlayerCancelling?"Вы":"Бот"} снял артефакт с продажи.`,"success",isPlayerCancelling); saveGame(); return true; }
 function buyArtifact(index,buyer,isPlayer,buyerName){ let offer=artifactMarket[index]; if(!offer) return false; let price=offer.price; let commission=Math.floor(price*MARKET_COMMISSION); let sellerGets=price-commission; if(buyer.credits<price) return false; buyer.credits-=price; addArtifact(isPlayer?playerArtifacts:buyer.artifacts,offer.artifactId,offer.usesLeft); updateArtifactPriceHistory(offer.artifactId,price); if(offer.sellerIsPlayer){ player.artifactSalesBalance+=sellerGets; addLogToGame(`${buyerName} купил ${ARTIFACTS[offer.artifactId].name} у вас за ${price}💰 (комиссия ${commission}💰).`,"success",true); } else { let sellerBot=bots.find(b=>b.id===offer.sellerId); if(sellerBot) sellerBot.artifactSalesBalance+=sellerGets; addLogToGame(`${buyerName} купил ${ARTIFACTS[offer.artifactId].name} у ${sellerBot.name} за ${price}💰.`,"success",isPlayer); } artifactMarket.splice(index,1); saveGame(); return true; }
 function withdrawArtifactSales(entity,isPlayer){ let balance=entity.artifactSalesBalance||0; if(balance<=0) return false; entity.credits+=balance; entity.artifactSalesBalance=0; addLogToGame(`${isPlayer?"Вы":entity.name} забрали ${balance}💰 со счёта продаж.`,"success",isPlayer); saveGame(); return true; }
 
-function getModulePrice(moduleType){
-    let base = MODULE_RECIPES[moduleType].costTM * 100 + 5000;
-    let hist = modulePriceHistory[moduleType];
-    if(hist && hist.count>0) return Math.floor(hist.totalSum/hist.count);
-    return base;
-}
-function updateModulePriceHistory(moduleType,price){
-    if(!modulePriceHistory[moduleType]) modulePriceHistory[moduleType]={totalSum:0,count:0};
+function getModulePrice(moduleType, level=0){
     let hist=modulePriceHistory[moduleType];
-    hist.totalSum+=price;
-    hist.count++;
-    saveGame();
+    let baseAvg = (hist && hist.count>0) ? Math.floor(hist.totalSum/hist.count) : (MODULE_RECIPES[moduleType].costTM * 100 + 5000);
+    let multiplier = 1 + level * MODULE_PRICE_LEVEL_MULTIPLIER;
+    return Math.floor(baseAvg * multiplier);
 }
-function listModuleForSale(moduleType,price,sellerId,sellerIsPlayer){
-    moduleMarket.push({moduleType,price,sellerId,sellerIsPlayer,timestamp:Date.now()});
-    addLogToGame(`${sellerIsPlayer?"Вы":"Бот"} выставил модуль ${MODULE_RECIPES[moduleType].name} на продажу за ${price}💰.`,"success",sellerIsPlayer);
+function updateModulePriceHistory(moduleType,price){ if(!modulePriceHistory[moduleType]) modulePriceHistory[moduleType]={totalSum:0,count:0}; let hist=modulePriceHistory[moduleType]; hist.totalSum+=price; hist.count++; saveGame(); }
+function listModuleForSale(moduleType,price,sellerId,sellerIsPlayer, level=0){
+    moduleMarket.push({moduleType,price,sellerId,sellerIsPlayer,timestamp:Date.now(), level});
+    addLogToGame(`${sellerIsPlayer?"Вы":"Бот"} выставил модуль ${MODULE_RECIPES[moduleType].name} (ур.${level}) на продажу за ${price}💰.`,"success",sellerIsPlayer);
     saveGame();
 }
 function cancelModuleSale(index,isPlayerCancelling){
@@ -467,16 +470,20 @@ function buyModule(index,buyer,isPlayer,buyerName){
     if(buyer.credits<price) return false;
     buyer.credits-=price;
     let existing = buyer.ownedModules.find(m=>!m.isUpgrade && m.type===offer.moduleType && !m.installed);
-    if(existing) existing.count++;
-    else buyer.ownedModules.push({type:offer.moduleType, installed:false, count:1, level:0});
+    if(existing){
+        existing.count = (existing.count||0)+1;
+        existing.level = offer.level; // сохраняем уровень
+    } else {
+        buyer.ownedModules.push({type:offer.moduleType, installed:false, count:1, level:offer.level});
+    }
     updateModulePriceHistory(offer.moduleType,price);
     if(offer.sellerIsPlayer){
         player.artifactSalesBalance+=sellerGets;
-        addLogToGame(`${buyerName} купил модуль ${MODULE_RECIPES[offer.moduleType].name} у вас за ${price}💰 (комиссия ${commission}💰).`,"success",true);
+        addLogToGame(`${buyerName} купил модуль ${MODULE_RECIPES[offer.moduleType].name} (ур.${offer.level}) у вас за ${price}💰 (комиссия ${commission}💰).`,"success",true);
     } else {
         let sellerBot=bots.find(b=>b.id===offer.sellerId);
         if(sellerBot) sellerBot.artifactSalesBalance+=sellerGets;
-        addLogToGame(`${buyerName} купил модуль ${MODULE_RECIPES[offer.moduleType].name} у ${sellerBot.name} за ${price}💰.`,"success",isPlayer);
+        addLogToGame(`${buyerName} купил модуль ${MODULE_RECIPES[offer.moduleType].name} (ур.${offer.level}) у ${sellerBot.name} за ${price}💰.`,"success",isPlayer);
     }
     moduleMarket.splice(index,1);
     saveGame();
@@ -584,7 +591,7 @@ function processCrafting(entity, isPlayer){
                     if(!canAddWeight(entity, MODULE_WEIGHT)){
                         addLogToGame(`${isPlayer?"Вы":entity.name} не хватает места в трюме для готового модуля!`,"warning",isPlayer);
                     } else {
-                        addModuleToInventory(entity, craft.type);
+                        addModuleToInventory(entity, craft.type, 1, 0);
                         addLogToGame(`${isPlayer?"Вы":entity.name} завершили крафт модуля ${recipe.name}.`,"success",isPlayer);
                     }
                 }
@@ -722,8 +729,38 @@ function uninstallModuleToInventory(entity, moduleType, isPlayer){
     saveGame();
     return true;
 }
+// ---- ПОЛОМКА МОДУЛЕЙ ПРИ НИЗКОЙ ПРОЧНОСТИ ----
+function breakRandomModule(){
+    let installedModules = [];
+    if(player.hasTMHarvester) installedModules.push({type:"harvester", name:"Добытчик ТМ", level:player.tmHarvesterLevel});
+    if(player.hasSSGenerator) installedModules.push({type:"generator", name:"Генератор СС", level:player.ssGeneratorLevel});
+    if(player.hasOptimizer) installedModules.push({type:"optimizer", name:"Оптимизатор полёта", level:player.optimizerLevel});
+    if(player.hasArmor) installedModules.push({type:"armor", name:"Усиленная броня", level:player.armorLevel});
+    if(player.hasScanner) installedModules.push({type:"scanner", name:"Дальний сканер", level:player.scannerLevel});
+    if(player.hasCargo) installedModules.push({type:"cargo", name:"Грузовой модуль", level:player.cargoLevel});
+    if(player.hasEngine) installedModules.push({type:"engine", name:"Импульсный двигатель", level:player.engineLevel});
+    if(player.hasShield) installedModules.push({type:"shield", name:"Энергетический щит", level:player.shieldLevel});
+    if(player.hasCloaking) installedModules.push({type:"cloaking", name:"Система маскировки", level:player.cloakingLevel});
+    if(player.hasMining) installedModules.push({type:"mining", name:"Астероидный бур", level:player.miningLevel});
+    if(installedModules.length===0) return;
+    let rnd = Math.floor(Math.random() * installedModules.length);
+    let mod = installedModules[rnd];
+    // Удаляем модуль
+    if(mod.type==="harvester"){ player.hasTMHarvester=false; player.tmHarvesterLevel=0; }
+    else if(mod.type==="generator"){ player.hasSSGenerator=false; player.ssGeneratorLevel=0; }
+    else if(mod.type==="optimizer"){ player.hasOptimizer=false; player.optimizerLevel=0; }
+    else if(mod.type==="armor"){ player.hasArmor=false; player.armorLevel=0; }
+    else if(mod.type==="scanner"){ player.hasScanner=false; player.scannerLevel=0; }
+    else if(mod.type==="cargo"){ player.hasCargo=false; player.cargoLevel=0; }
+    else if(mod.type==="engine"){ player.hasEngine=false; player.engineLevel=0; }
+    else if(mod.type==="shield"){ player.hasShield=false; player.shieldLevel=0; }
+    else if(mod.type==="cloaking"){ player.hasCloaking=false; player.cloakingLevel=0; }
+    else if(mod.type==="mining"){ player.hasMining=false; player.miningLevel=0; }
+    addLogToGame(`💥 Модуль "${mod.name}" вышел из строя из-за критических повреждений корпуса и был утерян!`,"warning",true);
+    saveGame();
+}
 
-// ---- Боевая система и перемещение (сброс цены планеты) ----
+// ---- Боевая система и перемещение (с поломкой модулей) ----
 function getTotalPower(entity){
     let ship=getShip(entity.shipLevel);
     let rocketBonus=(entity.cargo.rockets||0)*ROCKET_POWER;
@@ -911,6 +948,10 @@ async function move(delta){
     if(player.contrabandMission && player.contrabandMission.cargoTaken) await patrolEncounter(true);
     updateUI();
     encounterWithBots();
+    // Проверка поломки модулей при низкой прочности
+    if(player.hull <= 20 && Math.random() < MODULE_BREAK_CHANCE){
+        breakRandomModule();
+    }
     saveGame();
 }
 function hyperJump(direction){
@@ -929,6 +970,10 @@ function hyperJump(direction){
     addLogToGame(`Гиперпрыжок ${direction===-1?"налево":"направо"}! Вы на планете #${player.currentPlanet}`,"success",true);
     updateUI();
     encounterWithBots();
+    // Проверка поломки модулей при низкой прочности
+    if(player.hull <= 20 && Math.random() < MODULE_BREAK_CHANCE){
+        breakRandomModule();
+    }
     saveGame();
 }
 function tryFindGoods(entity,isPlayer){
@@ -1017,7 +1062,7 @@ function triggerRandomEvent(){
     else{ let dmg=Math.floor(Math.random()*3)+1; player.hull=Math.max(1,player.hull-dmg); let goodsList=GOODS.filter(g=>player.cargo[g.id]>0); if(goodsList.length>0){ let g=goodsList[Math.floor(Math.random()*goodsList.length)]; let lost=Math.min(player.cargo[g.id],Math.floor(Math.random()*2)+1); player.cargo[g.id]-=lost; addLogToGame(`☄️ Метеоритный дождь! Прочность -${dmg}%, потеряно ${lost} ${g.name}.`,"event",true); } else{ addLogToGame(`☄️ Метеоритный дождь! Прочность -${dmg}%.`,"event",true); } }
     saveGame();
 }
-// ---- Задания, контрабанда, курьерские ----
+// ---- Задания, контрабанда, курьерские (без изменений, но добавлены таймеры) ----
 function generateMission(){
     if(missionCompleted) return;
     if(currentMission && !currentMission.completed) return;
@@ -1076,7 +1121,6 @@ function updateMissionByTimer(){
     }
     return false;
 }
-// ---- КОНТРАБАНДА ----
 function generateContrabandOffers(){
     let offers=[];
     for(let level=1;level<=3;level++){
@@ -1181,12 +1225,11 @@ function updateContrabandMission(){
         generateContrabandOffers();
     }
 }
-// ---- КУРЬЕРСКИЕ ЗАДАНИЯ (механик) ----
 function generateMechanicMission(){
     let rewardType = Math.random()<0.5 ? "credits" : "tm";
     let rewardAmount;
-    if(rewardType==="credits") rewardAmount = Math.floor(Math.random()*4001)+1000; // 1000-5000
-    else rewardAmount = Math.floor(Math.random()*101)+50; // 50-150
+    if(rewardType==="credits") rewardAmount = Math.floor(Math.random()*4001)+1000;
+    else rewardAmount = Math.floor(Math.random()*101)+50;
     let fromPlanet, toPlanet;
     do{ fromPlanet=Math.floor(Math.random()*PLANET_COUNT)+1; toPlanet=Math.floor(Math.random()*PLANET_COUNT)+1; } while(fromPlanet===toPlanet);
     activeMechanicMission = { fromPlanet, toPlanet, rewardType, rewardAmount, completed:false, taken:false };
@@ -1240,7 +1283,7 @@ function updateMechanicMissionByTimer(){
         }
     }
 }
-// ---- UI функции (упрощённо, но с инвентарём и всеми вкладками) ----
+// ---- UI функции (инвентарь, планета, док, рынок, механик) ----
 function updateUI(){
     let ship=getShip(player.shipLevel);
     document.getElementById("shipName").innerText=ship.name;
@@ -1458,7 +1501,7 @@ function updateRankingModal(){
     let all=[{name:"⭐ ВЫ",level:player.level,power:getTotalPower(player),wins:player.wins},...bots.map(b=>({name:b.name,level:b.level,power:getTotalPower(b),wins:b.wins}))];
     all.sort((a,b)=>b.level-a.level||b.wins-a.wins);
     let html=`<table class="info-table"><thead><th>Пилот</th><th>Ур</th><th>Сила</th><th>Победы</th></thead><tbody>`;
-    all.forEach(p=>html+=`<tr><td>${p.name}</td><td>${p.level}</td><td>${Math.floor(p.power*100)/100}</td><td>${p.wins}</td></tr>`);
+    all.forEach(p=>html+=`专栏<td>${p.name}</td><td>${p.level}</td><td>${Math.floor(p.power*100)/100}</td><td>${p.wins}</td></tr>`);
     html+=`</tbody></table><p>Всего ботов: ${bots.length}</p><p>Уровень игрока = floor(побед/7)+1</p>`;
     let modal=document.createElement("div"); modal.className="modal";
     modal.innerHTML=`<div class="modal-content"><h2>🏆 РЕЙТИНГ ПИЛОТОВ</h2>${html}<div class="modal-buttons"><button id="closeRankingBtn">Закрыть</button></div></div>`;
@@ -1467,7 +1510,7 @@ function updateRankingModal(){
 }
 function showInfoModal(){
     let modal=document.createElement("div"); modal.className="modal";
-    let html=`<div class="modal-content"><h2>📖 СПРАВОЧНИК</h2><p>Космическая торговая песочница с крафтом, боями, контрабандой и модулями.</p><p>Уровень = floor(побед/7)+1. Максимум 21.</p><p>Корабли улучшаются за кредиты и ТМ.</p><p>Модули создаются на верстаке из компонентов (5 разных). Улучшения — из 3 компонентов.</p><p>Артефакты активируются из инвентаря.</p><p>Боты и игрок могут атаковать только в пределах ±1 уровень (кроме артефакта).</p><p>Маскировка защищает от 10 атак ботов.</p><div class="modal-buttons"><button id="closeInfoBtn">Закрыть</button></div></div>`;
+    let html=`<div class="modal-content"><h2>📖 СПРАВОЧНИК</h2><p>Космическая торговая песочница с крафтом, боями, контрабандой и модулями.</p><p>Уровень = floor(побед/7)+1. Максимум 21.</p><p>Корабли улучшаются за кредиты и ТМ.</p><p>Модули создаются на верстаке из компонентов (5 разных). Улучшения — из 3 компонентов.</p><p>Артефакты активируются из инвентаря.</p><p>Боты и игрок могут атаковать только в пределах ±1 уровень (кроме артефакта).</p><p>Маскировка защищает от 10 атак ботов.</p><p>При прочности ≤20% каждый перелёт может сломать один из установленных модулей (шанс 10%).</p><div class="modal-buttons"><button id="closeInfoBtn">Закрыть</button></div></div>`;
     modal.innerHTML=html;
     document.body.appendChild(modal);
     modal.querySelector("#closeInfoBtn").onclick=()=>modal.remove();
@@ -1628,8 +1671,8 @@ function openDock(restore=false){
         contentHtml+=`<div class="balance-panel"><h4>Счёт продаж: ${player.artifactSalesBalance}💰</h4><button id="withdrawSalesBtn">Забрать</button></div><h4>Ваши артефакты:</h4>`;
         for(let a of playerArtifacts){
             let art=ARTIFACTS[a.id];
-            let avgPrice=getAverageArtifactPrice(a.id);
-            contentHtml+=`<div class="market-item">${art.name} x${a.count} (ост.${a.usesLeft}) | Средняя: ${avgPrice}💰 <input type="number" id="price_${a.id}" value="${avgPrice}" min="1000" step="1000" style="width:80px"> <button class="sellArtifactBtn" data-id="${a.id}" data-uses="${a.usesLeft}">Продать</button></div>`;
+            let avgPrice=getAverageArtifactPrice(a.id, a.usesLeft);
+            contentHtml+=`<div class="market-item">${art.name} x${a.count} (ост.${a.usesLeft}) | Средняя с учётом зарядов: ${avgPrice}💰 <input type="number" id="price_${a.id}" value="${avgPrice}" min="1000" step="1000" style="width:80px"> <button class="sellArtifactBtn" data-id="${a.id}" data-uses="${a.usesLeft}">Продать</button></div>`;
         }
         contentHtml+=`<h4>Доступные артефакты:</h4>`;
         if(artifactMarket.length===0) contentHtml+="<p>Нет артефактов в продаже.</p>";
@@ -1662,8 +1705,8 @@ function openDock(restore=false){
         if(unstalledModules.length===0) contentHtml+="<p>Нет модулей для продажи.</p>";
         else unstalledModules.forEach(mod=>{
             let recipe=MODULE_RECIPES[mod.type];
-            let avgPrice=getModulePrice(mod.type);
-            contentHtml+=`<div class="market-item">${recipe.name} x${mod.count} (уровень ${mod.level}) | Средняя: ${avgPrice}💰 <input type="number" id="price_${mod.type}" value="${avgPrice}" min="5000" step="1000" style="width:80px"> <button class="sellModuleBtn" data-type="${mod.type}">Продать 1</button> <button class="sellAllModuleBtn" data-type="${mod.type}">Продать все</button></div>`;
+            let avgPrice=getModulePrice(mod.type, mod.level);
+            contentHtml+=`<div class="market-item">${recipe.name} x${mod.count} (уровень ${mod.level}) | Рек. цена: ${avgPrice}💰 <input type="number" id="price_${mod.type}" value="${avgPrice}" min="5000" step="1000" style="width:80px"> <button class="sellModuleBtn" data-type="${mod.type}" data-level="${mod.level}">Продать 1</button> <button class="sellAllModuleBtn" data-type="${mod.type}" data-level="${mod.level}">Продать все</button></div>`;
         });
         contentHtml+=`<h4>Доступные модули на рынке:</h4>`;
         if(moduleMarket.length===0) contentHtml+="<p>Нет модулей в продаже.</p>";
@@ -1671,7 +1714,7 @@ function openDock(restore=false){
             let offer=moduleMarket[i];
             let recipe=MODULE_RECIPES[offer.moduleType];
             let seller=offer.sellerIsPlayer?"Вы":(bots.find(b=>b.id===offer.sellerId)?.name||"Бот");
-            contentHtml+=`<div class="market-item">${recipe.name} — ${offer.price}💰 (продавец: ${seller}) <button class="buyModuleBtn" data-index="${i}">Купить</button>${offer.sellerIsPlayer?` <button class="cancelModuleBtn" data-index="${i}">Снять</button>`:''}</div>`;
+            contentHtml+=`<div class="market-item">${recipe.name} (ур.${offer.level}) — ${offer.price}💰 (продавец: ${seller}) <button class="buyModuleBtn" data-index="${i}">Купить</button>${offer.sellerIsPlayer?` <button class="cancelModuleBtn" data-index="${i}">Снять</button>`:''}</div>`;
         }
         contentHtml+=`</div><div class="modal-buttons"><button id="closeMarketBtn">Закрыть</button></div>`;
         win.innerHTML=`<div class="modal-content">${tabsHtml}${contentHtml}</div>`;
@@ -1740,29 +1783,31 @@ function openDock(restore=false){
         win.querySelectorAll(".sellModuleBtn").forEach(btn=>{
             btn.onclick=()=>{
                 let type=btn.dataset.type;
+                let level=parseInt(btn.dataset.level);
                 let priceInput=win.querySelector(`#price_${type}`);
                 let price=parseInt(priceInput.value);
                 if(isNaN(price)||price<5000){ alert("Цена >=5000"); return; }
-                let modIdx=player.ownedModules.findIndex(m=>!m.isUpgrade && m.type===type && !m.installed && m.count>0);
+                let modIdx=player.ownedModules.findIndex(m=>!m.isUpgrade && m.type===type && !m.installed && m.count>0 && m.level===level);
                 if(modIdx===-1) return;
                 let mod=player.ownedModules[modIdx];
                 if(mod.count>1) mod.count--;
                 else player.ownedModules.splice(modIdx,1);
-                listModuleForSale(type,price,"player",true);
+                listModuleForSale(type,price,"player",true, level);
                 win.remove(); showMarketModal();
             };
         });
         win.querySelectorAll(".sellAllModuleBtn").forEach(btn=>{
             btn.onclick=()=>{
                 let type=btn.dataset.type;
+                let level=parseInt(btn.dataset.level);
                 let priceInput=win.querySelector(`#price_${type}`);
                 let price=parseInt(priceInput.value);
                 if(isNaN(price)||price<5000){ alert("Цена >=5000"); return; }
-                let modIdx=player.ownedModules.findIndex(m=>!m.isUpgrade && m.type===type && !m.installed);
+                let modIdx=player.ownedModules.findIndex(m=>!m.isUpgrade && m.type===type && !m.installed && m.level===level);
                 if(modIdx===-1) return;
                 let mod=player.ownedModules[modIdx];
                 let qty=mod.count;
-                for(let i=0;i<qty;i++) listModuleForSale(type,price,"player",true);
+                for(let i=0;i<qty;i++) listModuleForSale(type,price,"player",true, level);
                 player.ownedModules.splice(modIdx,1);
                 win.remove(); showMarketModal();
             };
