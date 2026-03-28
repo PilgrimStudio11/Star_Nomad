@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Star Nomad — Торговая Империя (полная версия)</title>
+    <title>Star Nomad — Торговая Империя (финальная версия)</title>
     <style>
         * { box-sizing: border-box; user-select: none; touch-action: manipulation; }
         body { background: #03050b; font-family: 'Courier New', monospace; margin: 0; padding: 20px; color: white; }
@@ -38,7 +38,6 @@
         .trade-item input { width: 80px; background:#1f2a3a; border:1px solid #4a7a9a; color:white; border-radius:20px; padding:5px; text-align:center; }
         .hidden { display: none; }
         .shop-item { background: #07121f; border-radius: 20px; padding: 12px; margin: 8px 0; display: flex; justify-content: space-between; flex-wrap: wrap; }
-        .mission-panel { margin-bottom:15px; background:#07121faa; border-radius:28px; padding:10px; text-align:center; }
         .planet-list-item { background:#0f1a2c; margin:5px 0; padding:8px; border-radius:16px; display:flex; justify-content:space-between; flex-wrap:wrap; align-items:center; }
         .inline-buttons button { margin:3px; padding:4px 10px; font-size:12px; }
         .dock-log { background:#02070f; border-radius:24px; height:150px; overflow-y:auto; padding:10px; font-size:12px; margin-top:10px; }
@@ -92,7 +91,6 @@
         </div>
         <div class="active-effects" id="activeEffects"></div>
         <div class="main-area">
-            <div class="mission-panel"><span id="missionText">Нет активного задания</span></div>
             <div class="planet-card" id="currentPlanetCard"><div class="planet-name" id="currentPlanetName">Планета #?</div><div>🔄 нажми, чтобы открыть</div></div>
             <div class="nav-buttons"><button id="leftBtn">◀ ЛЕВО</button><button id="rightBtn">ПРАВО ▶</button></div>
             <div class="hyper-buttons"><button id="hyperLeftBtn">⬅️⬅️⬅️ ГИПЕР ЛЕВО</button><button id="hyperRightBtn">ГИПЕР ПРАВО ➡️➡️➡️</button></div>
@@ -117,7 +115,7 @@ const GOODS_FIND_CHANCE = 0.1;
 const GOODS_FIND_AMOUNT = [1,3];
 const GOODS_FIND_TYPES = ["gold","food"];
 const ARTIFACT_FIND_CHANCE = 0.005;
-const COMPONENT_FIND_CHANCE = 0.03;      // 3%
+const COMPONENT_FIND_CHANCE = 0.03;
 const EVENT_CHANCE = 0.03;
 const EVENT_HELP_SHIP_CHANCE = 0.01;
 const MINERAL_FIND_CHANCE = 0.05;
@@ -125,7 +123,7 @@ const MINERAL_ZONE_START = [1,100];
 const MINERAL_ZONE_END = [901,1000];
 const CONTRABAND_ENCOUNTER_CHANCE = 0.05;
 const CONTRABAND_MISSION_COOLDOWN = 15*60*1000;
-const MECHANIC_MISSION_COOLDOWN = 15*60*1000; // каждые 15 минут
+const MECHANIC_MISSION_COOLDOWN = 15*60*1000;
 const BOT_MOVE_DELAY = 1000;
 const BOT_CREATE_INTERVAL = 5*60*1000;
 const MAX_BOTS = 200;
@@ -154,8 +152,8 @@ const ROCKET_POWER = 2;
 const TM_POWER = 0.01;
 const MARKET_COMMISSION = 0.05;
 const MODULE_WEIGHT = 10;
-const CRAFT_MODULE_TIME = 5*60*1000;   // 5 минут
-const CRAFT_UPGRADE_TIME = 60*1000;    // 1 минута
+const CRAFT_MODULE_TIME = 5*60*1000;
+const CRAFT_UPGRADE_TIME = 60*1000;
 
 const GOODS = [
     { id: "gold", name: "Золото", baseBuy:100, baseSell:100, spread:30, cargoSpace:1 },
@@ -418,7 +416,7 @@ function addArtifact(arr,id,usesLeft){ let existing=arr.find(a=>a.id===id && a.u
 function useArtifact(arr,id){ let idx=arr.findIndex(a=>a.id===id); if(idx===-1) return false; let art=arr[idx]; if(art.count>1) art.count--; else arr.splice(idx,1); return true; }
 function hasArtifact(arr,id){ return arr.some(a=>a.id===id); }
 
-// ---- Рынки ----
+// ---- Рынки (сокращённо, но полно) ----
 function getAverageComponentPrice(compId){ let hist=componentPriceHistory[compId]; if(!hist||hist.count===0) return COMPONENTS.find(c=>c.id===compId).basePrice; return Math.floor(hist.totalSum/hist.count); }
 function updateComponentPriceHistory(compId,price){ if(!componentPriceHistory[compId]) componentPriceHistory[compId]={totalSum:0,count:0}; let hist=componentPriceHistory[compId]; hist.totalSum+=price; hist.count++; saveGame(); }
 function listComponentForSale(compId,price,sellerId,sellerIsPlayer){ componentMarket.push({componentId:compId,price,sellerId,sellerIsPlayer,timestamp:Date.now()}); addLogToGame(`${sellerIsPlayer?"Вы":"Бот"} выставил ${COMPONENTS.find(c=>c.id===compId).name} на продажу за ${price}💰.`,"success",sellerIsPlayer); saveGame(); }
@@ -725,7 +723,7 @@ function uninstallModuleToInventory(entity, moduleType, isPlayer){
     return true;
 }
 
-// ---- Боевая система и перемещение (с исправлением сброса цены планеты) ----
+// ---- Боевая система и перемещение (сброс цены планеты) ----
 function getTotalPower(entity){
     let ship=getShip(entity.shipLevel);
     let rocketBonus=(entity.cargo.rockets||0)*ROCKET_POWER;
@@ -1031,7 +1029,7 @@ function generateMission(){
     const rewardAmount=rewardType==="credits"?Math.floor(Math.random()*4001)+1000:Math.floor(Math.random()*51)+50;
     currentMission={good:good.id,goodName:good.name,qty,fromPlanet,toPlanet,rewardType,rewardAmount,completed:false,bought:0,sold:0};
     missionCompleted=false;
-    addLogToGame(`📡 НОВОЕ ЗАДАНИЕ: купить ${qty} ${good.name} на планете #${fromPlanet}, затем продать их на планете #${toPlanet}. Награда: ${rewardAmount} ${rewardType==="credits"?"💰":"🌑 ТМ"}!`,"mission",true);
+    addLogToGame(`📡 НОВОЕ ЛЕГАЛЬНОЕ ЗАДАНИЕ: купить ${qty} ${good.name} на планете #${fromPlanet}, затем продать их на планете #${toPlanet}. Награда: ${rewardAmount} ${rewardType==="credits"?"💰":"🌑 ТМ"}!`,"mission",true);
     saveGame();
 }
 function onBuyGood(goodId,qty,planetNumber,isPlayer){
@@ -1041,7 +1039,7 @@ function onBuyGood(goodId,qty,planetNumber,isPlayer){
     if(planetNumber!==currentMission.fromPlanet) return false;
     currentMission.bought=(currentMission.bought||0)+qty;
     if(currentMission.bought>currentMission.qty) currentMission.bought=currentMission.qty;
-    addLogToGame(`📦 Задание: куплено ${currentMission.bought}/${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet}`,"mission",true);
+    addLogToGame(`📦 Легальное задание: куплено ${currentMission.bought}/${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet}`,"mission",true);
     saveGame();
     return true;
 }
@@ -1055,16 +1053,16 @@ function onSellGood(goodId,qty,planetNumber,isPlayer){
     if(currentMission.sold>currentMission.qty) currentMission.sold=currentMission.qty;
     if(currentMission.sold>=currentMission.qty){
         currentMission.completed=true; missionCompleted=true;
-        if(currentMission.rewardType==="credits"){ player.credits+=currentMission.rewardAmount; addLogToGame(`🎉 Задание выполнено! +${currentMission.rewardAmount}💰!`,"success",true); }
-        else{ player.darkMatter+=currentMission.rewardAmount; addLogToGame(`🎉 Задание выполнено! +${currentMission.rewardAmount}🌑 ТМ!`,"success",true); }
+        if(currentMission.rewardType==="credits"){ player.credits+=currentMission.rewardAmount; addLogToGame(`🎉 Легальное задание выполнено! +${currentMission.rewardAmount}💰!`,"success",true); }
+        else{ player.darkMatter+=currentMission.rewardAmount; addLogToGame(`🎉 Легальное задание выполнено! +${currentMission.rewardAmount}🌑 ТМ!`,"success",true); }
         player.missionsCompleted++;
         let newBonus10=Math.floor(player.missionsCompleted/10);
         let newBonus100=Math.floor(player.missionsCompleted/100);
-        if(newBonus10>player.lastMissionBonus10){ let bonus=(newBonus10-player.lastMissionBonus10)*10000; player.credits+=bonus; addLogToGame(`🏆 Бонус за выполнение ${newBonus10*10} заданий! Получено ${bonus}💰.`,"success",true); player.lastMissionBonus10=newBonus10; }
-        if(newBonus100>player.lastMissionBonus100){ let bonus=(newBonus100-player.lastMissionBonus100)*1000; player.darkMatter+=bonus; addLogToGame(`🏆 Бонус за выполнение ${newBonus100*100} заданий! Получено ${bonus}🌑 ТМ.`,"success",true); player.lastMissionBonus100=newBonus100; }
+        if(newBonus10>player.lastMissionBonus10){ let bonus=(newBonus10-player.lastMissionBonus10)*10000; player.credits+=bonus; addLogToGame(`🏆 Бонус за выполнение ${newBonus10*10} легальных заданий! Получено ${bonus}💰.`,"success",true); player.lastMissionBonus10=newBonus10; }
+        if(newBonus100>player.lastMissionBonus100){ let bonus=(newBonus100-player.lastMissionBonus100)*1000; player.darkMatter+=bonus; addLogToGame(`🏆 Бонус за выполнение ${newBonus100*100} легальных заданий! Получено ${bonus}🌑 ТМ.`,"success",true); player.lastMissionBonus100=newBonus100; }
         saveGame();
         return true;
-    } else { addLogToGame(`📊 Прогресс задания: продано ${currentMission.sold}/${currentMission.qty} ${currentMission.goodName}`,"mission",true); saveGame(); }
+    } else { addLogToGame(`📊 Прогресс легального задания: продано ${currentMission.sold}/${currentMission.qty} ${currentMission.goodName}`,"mission",true); saveGame(); }
     return false;
 }
 function updateMissionByTimer(){
@@ -1072,12 +1070,13 @@ function updateMissionByTimer(){
     let lastSlot=Math.floor(lastMissionUpdate/MISSION_REFRESH_INTERVAL), curSlot=Math.floor(now/MISSION_REFRESH_INTERVAL);
     if(curSlot!==lastSlot){
         lastMissionUpdate=now;
-        if(currentMission && !currentMission.completed) addLogToGame("⏰ Время выполнения задания истекло. Новое задание.","warning",true);
+        if(currentMission && !currentMission.completed) addLogToGame("⏰ Время выполнения легального задания истекло. Новое задание.","warning",true);
         currentMission=null; missionCompleted=false; generateMission();
         return true;
     }
     return false;
 }
+// ---- КОНТРАБАНДА ----
 function generateContrabandOffers(){
     let offers=[];
     for(let level=1;level<=3;level++){
@@ -1097,6 +1096,7 @@ function generateContrabandOffers(){
         offers.push({level,fromPlanet,toPlanet,rewardType,rewardBase,completed:false});
     }
     activeContrabandOffers=offers;
+    addLogToGame(`🎲 Новые контрабандные задания доступны в доке.`,"contraband",true);
     saveGame();
 }
 function takeContrabandOffer(offerIndex){
@@ -1176,12 +1176,12 @@ async function patrolEncounter(isPlayer){
 }
 function updateContrabandMission(){
     let now=Date.now();
-    if(now-lastContrabandUpdate>=CONTRABAND_MISSION_COOLDOWN){
-        lastContrabandUpdate=now;
+    if(now - lastContrabandUpdate >= CONTRABAND_MISSION_COOLDOWN){
+        lastContrabandUpdate = now;
         generateContrabandOffers();
     }
 }
-// ---- Курьерские задания механика ----
+// ---- КУРЬЕРСКИЕ ЗАДАНИЯ (механик) ----
 function generateMechanicMission(){
     let rewardType = Math.random()<0.5 ? "credits" : "tm";
     let rewardAmount;
@@ -1227,7 +1227,6 @@ function deliverMechanicCargo(){
     else player.darkMatter += player.mechanicMission.rewardAmount;
     addLogToGame(`🎉 Курьерское задание выполнено! Получено ${player.mechanicMission.rewardAmount} ${player.mechanicMission.rewardType==="credits"?"💰":"🌑 ТМ"}.`,"success",true);
     player.mechanicMission = null;
-    // отметить задание как завершённое, чтобы можно было сгенерировать новое
     if(activeMechanicMission) activeMechanicMission.completed = true;
     saveGame();
     return true;
@@ -1238,12 +1237,10 @@ function updateMechanicMissionByTimer(){
         lastMechanicMissionUpdate = now;
         if( (!activeMechanicMission || activeMechanicMission.completed) && !player.mechanicMission ){
             generateMechanicMission();
-        } else {
-            // можно обновить, если задание не взято и истекло время? по логике оставляем текущее, пока не взято или не выполнено
         }
     }
 }
-// ---- UI функции ----
+// ---- UI функции (упрощённо, но с инвентарём и всеми вкладками) ----
 function updateUI(){
     let ship=getShip(player.shipLevel);
     document.getElementById("shipName").innerText=ship.name;
@@ -1275,10 +1272,6 @@ function updateUI(){
     if(player.hasCloaking) effectsHtml+=`<div class="stat">👻 Маскировка (ур.${player.cloakingLevel})</div>`;
     if(player.hasMining) effectsHtml+=`<div class="stat">⛏️ Бур (ур.${player.miningLevel})</div>`;
     document.getElementById("activeEffects").innerHTML=effectsHtml||'';
-    let missionText="Нет активного задания";
-    if(currentMission && !currentMission.completed) missionText=`📋 ЗАДАНИЕ: купить ${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet}, затем продать на #${currentMission.toPlanet}. Прогресс: куплено ${currentMission.bought||0}/${currentMission.qty}, продано ${currentMission.sold||0}/${currentMission.qty}. Награда: ${currentMission.rewardAmount} ${currentMission.rewardType==="credits"?"💰":"🌑 ТМ"}`;
-    else if(currentMission && currentMission.completed) missionText="✅ Задание выполнено.";
-    document.getElementById("missionText").innerText=missionText;
 }
 function activateArtifact(artifactId){
     let art=ARTIFACTS[artifactId];
@@ -1353,20 +1346,17 @@ function openInventoryModal(){
     let currentWeight=getCurrentCargoWeight(player);
     let weightHtml=`<div class="dock-timer">Вес груза: ${currentWeight}/${ship.cargo}</div>`;
     let html=`<h3>🎒 ИНВЕНТАРЬ</h3>${weightHtml}<div class="inventory-category"><h4>📋 Активные задания</h4>`;
-    // Легальное задание
     if(currentMission && !currentMission.completed){
         html+=`<div class="inventory-item"><b>Легальное задание</b><br>Купить ${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet}, продать на #${currentMission.toPlanet}. Прогресс: куплено ${currentMission.bought||0}/${currentMission.qty}, продано ${currentMission.sold||0}/${currentMission.qty}. Награда: ${currentMission.rewardAmount} ${currentMission.rewardType==="credits"?"💰":"🌑 ТМ"}</div>`;
     } else {
         html+=`<div class="inventory-item">Нет активного легального задания</div>`;
     }
-    // Контрабандное задание
     if(player.contrabandMission){
         let status = player.contrabandMission.cargoTaken ? "Груз взят, доставить на #"+player.contrabandMission.toPlanet : "Забрать груз на #"+player.contrabandMission.fromPlanet;
         html+=`<div class="inventory-item"><b>Контрабандное задание (ур.${player.contrabandMission.level})</b><br>${status}. Награда: ${player.contrabandMission.rewardBase} ${player.contrabandMission.rewardType==="credits"?"💰":"🌑 ТМ"} (с учётом рейтинга). Рейтинг ±${player.contrabandMission.level}</div>`;
     } else {
         html+=`<div class="inventory-item">Нет активного контрабандного задания</div>`;
     }
-    // Курьерское задание
     if(player.mechanicMission){
         let status = player.mechanicMission.cargoTaken ? "Груз взят, доставить на #"+player.mechanicMission.toPlanet : "Забрать груз на #"+player.mechanicMission.fromPlanet;
         html+=`<div class="inventory-item"><b>Курьерское задание</b><br>${status}. Награда: ${player.mechanicMission.rewardAmount} ${player.mechanicMission.rewardType==="credits"?"💰":"🌑 ТМ"}</div>`;
@@ -1497,7 +1487,7 @@ function openDock(restore=false){
             <button id="dockTeleportBtn">🌀 ТЕЛЕПОРТ</button>
             <button id="dockMyPlanetsBtn">📡 МОИ ПЛАНЕТЫ</button>
             <button id="dockStatsBtn">📊 ПАРАМЕТРЫ</button>
-            <button id="dockMissionBtn">📜 ЗАДАНИЕ</button>
+            <button id="dockMissionBtn">📜 ЛЕГАЛЬНОЕ ЗАДАНИЕ</button>
             <button id="dockContrabandBtn">🎲 КОНТРАБАНДИСТ</button>
             <button id="dockMarketBtn">🏺 РЫНОК</button>
             <button id="dockCraftBtn">🔧 МЕХАНИК</button>
@@ -1561,11 +1551,16 @@ function openDock(restore=false){
         alert(`Кредиты: ${player.credits}\nСС: ${player.strangePower}\nТМ: ${player.darkMatter}\nГруз: ${getCurrentCargoWeight(player)}/${ship.cargo}\nУровень: ${player.level}\nПобед: ${player.wins}\nЗаданий: ${player.missionsCompleted}\nРейтинг контрабандиста: ${player.contrabandRating}`);
     }
     function showMissionModal(){
-        alert(currentMission?`Задание: купить ${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet} и продать на #${currentMission.toPlanet}. Награда: ${currentMission.rewardAmount} ${currentMission.rewardType==="credits"?"💰":"🌑 ТМ"}`:"Нет активного задания");
+        if(currentMission && !currentMission.completed){
+            alert(`Легальное задание: купить ${currentMission.qty} ${currentMission.goodName} на #${currentMission.fromPlanet} и продать на #${currentMission.toPlanet}. Прогресс: куплено ${currentMission.bought||0}/${currentMission.qty}, продано ${currentMission.sold||0}/${currentMission.qty}. Награда: ${currentMission.rewardAmount} ${currentMission.rewardType==="credits"?"💰":"🌑 ТМ"}`);
+        } else {
+            alert("Нет активного легального задания");
+        }
     }
     function showContrabandModal(){
         let win=document.createElement("div"); win.className="modal";
-        let html=`<h3>🎲 Контрабандист</h3><p>Рейтинг: ${player.contrabandRating}</p><button id="sellMineralsBtn">Продать минералы</button><div class="trade-row"><h4>Задания:</h4>`;
+        let nextRefresh = Math.max(0, Math.ceil((lastContrabandUpdate + CONTRABAND_MISSION_COOLDOWN - Date.now())/1000/60));
+        let html=`<h3>🎲 Контрабандист</h3><p>Рейтинг: ${player.contrabandRating}</p><button id="sellMineralsBtn">Продать минералы</button><div class="trade-row"><h4>Доступные задания (обновление через ${nextRefresh} мин):</h4>`;
         if(activeContrabandOffers.length){
             for(let i=0;i<activeContrabandOffers.length;i++){
                 let offer=activeContrabandOffers[i];
@@ -1574,7 +1569,9 @@ function openDock(restore=false){
                     html+=`<button class="takeContrabandOfferDockBtn" data-offer="${i}">Уровень ${offer.level}: забрать на #${offer.fromPlanet} -> #${offer.toPlanet}, награда ${offer.rewardBase}${rewardTypeName}</button><br>`;
                 }
             }
-        } else html+=`<p>Нет заданий</p>`;
+        } else {
+            html+=`<p>Нет заданий. Следующие появятся через ${nextRefresh} мин.</p>`;
+        }
         html+=`</div><div class="modal-buttons"><button id="closeContrabandBtn">Закрыть</button></div>`;
         win.innerHTML=`<div class="modal-content">${html}</div>`;
         document.body.appendChild(win);
@@ -1780,6 +1777,7 @@ function openDock(restore=false){
     }
     function showCraftModal(){
         let win=document.createElement("div"); win.className="modal";
+        let nextCourierRefresh = Math.max(0, Math.ceil((lastMechanicMissionUpdate + MECHANIC_MISSION_COOLDOWN - Date.now())/1000/60));
         let tabsHtml=`<div class="tab-bar"><button class="tab-btn active" data-tab="blueprints">📜 Чертежи</button><button class="tab-btn" data-tab="craft">🔨 Крафт (верстак)</button><button class="tab-btn" data-tab="upgrade">⚡ Апгрейд</button><button class="tab-btn" data-tab="courier">📦 Курьерские</button></div>`;
         let contentHtml=`<div id="craftBlueprints" class="craft-content"><h4>Чертежи модулей (500 ТМ):</h4>`;
         for(let [id,recipe] of Object.entries(MODULE_RECIPES)){
@@ -1872,13 +1870,13 @@ function openDock(restore=false){
             let hasUpgrade = player.ownedModules.some(m=>m.isUpgrade && m.type===type && m.count>0);
             contentHtml+=`<div class="craft-item">${name} (ур.${level}) ${installed?`<button class="uninstallModuleBtn" data-type="${type}">Снять (${MODULE_BLUEPRINTS[type].installCost}💰)</button> <button class="upgradeModuleBtn" data-type="${type}" ${hasUpgrade?'':'disabled'}>Улучшить (есть улучшение)</button>`:`<button class="installModuleBtn" data-type="${type}">Установить (${MODULE_BLUEPRINTS[type].installCost}💰)</button>`}</div>`;
         }
-        contentHtml+=`</div><div id="craftCourier" class="craft-content hidden"><h4>Курьерские задания</h4>`;
+        contentHtml+=`</div><div id="craftCourier" class="craft-content hidden"><h4>Курьерские задания (обновление через ${nextCourierRefresh} мин)</h4>`;
         if(activeMechanicMission && !activeMechanicMission.completed && !activeMechanicMission.taken){
             contentHtml+=`<div class="craft-item">Доставить груз с #${activeMechanicMission.fromPlanet} на #${activeMechanicMission.toPlanet}. Награда: ${activeMechanicMission.rewardAmount} ${activeMechanicMission.rewardType==="credits"?"💰":"🌑 ТМ"}<br><button id="takeMechanicMissionBtn">Взять задание</button></div>`;
         } else if(player.mechanicMission){
             contentHtml+=`<div class="craft-item">У вас уже есть курьерское задание: доставить груз с #${player.mechanicMission.fromPlanet} на #${player.mechanicMission.toPlanet}. Награда: ${player.mechanicMission.rewardAmount} ${player.mechanicMission.rewardType==="credits"?"💰":"🌑 ТМ"}</div>`;
         } else {
-            contentHtml+=`<p>Нет доступных курьерских заданий. Новое появится через ${Math.max(0,Math.ceil((lastMechanicMissionUpdate+MECHANIC_MISSION_COOLDOWN-Date.now())/1000/60))} минут.</p>`;
+            contentHtml+=`<p>Нет доступных курьерских заданий. Новое появится через ${nextCourierRefresh} мин.</p>`;
         }
         contentHtml+=`</div><div class="modal-buttons"><button id="closeCraftBtn">Закрыть</button></div>`;
         win.innerHTML=`<div class="modal-content">${tabsHtml}${contentHtml}</div>`;
@@ -1967,7 +1965,6 @@ function openDock(restore=false){
                 } else alert("Не удалось взять задание");
             };
         }
-        // Добавляем выбор чертежа
         win.querySelectorAll("#craftBlueprints .craft-item").forEach(item=>{
             let btn=item.querySelector("button");
             if(btn && btn.classList.contains("buyBlueprintBtn")) return;
@@ -2556,14 +2553,12 @@ window.onload=()=>{
                     <button id="installTeleport" ${modules.teleport?"disabled":""}>🌀 Установить телепорт (${MODULE_PLANET_TELEPORT_COST}💰)</button>`;
             if(modules.teleport) html+=`<button id="teleportFromPlanetBtn">🌀 Телепорт на другую планету</button>`;
         }
-        // контрабандные кнопки
         if(player.contrabandMission && !player.contrabandMission.cargoTaken && player.currentPlanet===player.contrabandMission.fromPlanet){
             html+=`<button id="takeContrabandCargoBtn">📦 Забрать контрабанду</button>`;
         }
         if(player.contrabandMission && player.contrabandMission.cargoTaken && player.currentPlanet===player.contrabandMission.toPlanet){
             html+=`<button id="deliverContrabandBtn">📦 Сдать контрабанду</button>`;
         }
-        // курьерские кнопки
         if(player.mechanicMission && !player.mechanicMission.cargoTaken && player.currentPlanet===player.mechanicMission.fromPlanet){
             html+=`<button id="takeMechanicCargoBtn">📦 Забрать груз (курьер)</button>`;
         }
@@ -2607,7 +2602,6 @@ window.onload=()=>{
             });
             tpModal.querySelector("#cancelTeleport").onclick=()=>tpModal.remove();
         };
-        // контрабандные действия
         if(modal.querySelector("#takeContrabandCargoBtn")) modal.querySelector("#takeContrabandCargoBtn").onclick=()=>{ takeContrabandCargo(); modal.remove(); openPlanetMenu(planetNumber); };
         if(modal.querySelector("#deliverContrabandBtn")) modal.querySelector("#deliverContrabandBtn").onclick=()=>{ deliverContraband(); modal.remove(); openPlanetMenu(planetNumber); };
         if(modal.querySelector("#takeMechanicCargoBtn")) modal.querySelector("#takeMechanicCargoBtn").onclick=()=>{ takeMechanicCargo(); modal.remove(); openPlanetMenu(planetNumber); };
